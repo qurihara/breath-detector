@@ -37,6 +37,17 @@ header h1 {
 
 .tagline { color: var(--muted); margin-top: 4px; }
 
+.wip {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .visual {
   position: relative;
   margin: 28px 0;
