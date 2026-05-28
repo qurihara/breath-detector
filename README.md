@@ -49,15 +49,22 @@
 | `minBreathInterval` | `1200` | 呼吸イベントの最小間隔 (ms) |
 | `idleThreshold` | `0.004` | この振幅未満は静止 (idle) とみなす |
 | `rateWindow` | `5` | BPM 算出に使う直近の呼吸間隔の数 |
+| `deviceId` | `null` | 使用するマイクの deviceId（null で既定マイク） |
 
 ### メソッド / イベント
 
 - `await start(existingStream?)` — マイクを取得し解析開始（許可ダイアログ）
 - `stop()` — 停止しリソース解放
+- `await listDevices()` — 利用可能なマイク一覧（`MediaDeviceInfo[]`）
+- `await setDevice(deviceId)` — 使用マイクを切替（解析中なら自動で再起動）
 - `getRate()` — 現在の推定呼吸数（BPM）
 - `getState()` — `{ phase, rate, amplitude, breathCount, running }`
 - `on(event, handler)` / `off(event, handler)`
 - イベント: `start` / `stop` / `breath` / `phase` / `data`
+
+> マイクを複数持つ環境では `listDevices()` で列挙し、`new BreathDetector({ deviceId })`
+> または `setDevice(deviceId)` で選択できます。デバイス名(`label`)はマイク許可付与後に
+> 取得できます。`listInputDevices()` も名前付きエクスポートとして利用可能です。
 
 ## ローカルで試す
 

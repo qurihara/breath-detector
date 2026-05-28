@@ -1,7 +1,8 @@
-import { BreathDetector } from './src/breath-detector.js';
+import { BreathDetector, listInputDevices } from './src/breath-detector.js';
 
 const els = {
   toggle: document.getElementById('toggle'),
+  micSelect: document.getElementById('micSelect'),
   bpm: document.getElementById('bpm'),
   count: document.getElementById('count'),
   phaseStat: document.getElementById('phaseStat'),
@@ -97,12 +98,41 @@ els.sensitivity.addEventListener('input', () => {
   els.sensVal.textContent = v.toFixed(1);
 });
 
+// 利用可能なマイクを列挙してドロップダウンに反映する。
+// label は許可付与後にしか取得できないため、開始後に再列挙する。
+async function populateMics() {
+  try {
+    const devices = await listInputDevices();
+    const current = els.micSelect.value;
+    els.micSelect.innerHTML = '';
+    devices.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `マイク ${i + 1}`;
+      els.micSelect.appendChild(opt);
+    });
+    if (current) els.micSelect.value = current;
+    els.micSelect.disabled = devices.length <= 1;
+  } catch (_) { /* 許可前は列挙に失敗することがある */ }
+}
+
+els.micSelect.addEventListener('change', async () => {
+  await detector.setDevice(els.micSelect.value || null);
+});
+
+if (navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', populateMics);
+}
+
 async function start() {
   try {
     els.status.textContent = '';
+    detector.options.deviceId = els.micSelect.value || null;
     await detector.start();
     els.toggle.textContent = '測定を停止';
     els.toggle.classList.add('running');
+    // 許可付与後はマイク名が取得できるので一覧を更新する。
+    await populateMics();
   } catch (err) {
     els.status.textContent = 'マイクにアクセスできませんでした: ' + err.message;
   }
@@ -123,3 +153,4 @@ els.toggle.addEventListener('click', () => {
 
 resizeCanvas();
 draw();
+populateMics();

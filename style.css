@@ -131,6 +131,17 @@ canvas {
 }
 .slider input { accent-color: var(--accent); }
 
+.slider select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  max-width: 200px;
+}
+.slider select:disabled { opacity: 0.5; }
+
 .hint { color: var(--muted); margin-top: 24px; }
 .status { color: #f59e0b; min-height: 1.2em; }
 

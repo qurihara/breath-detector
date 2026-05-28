@@ -19,8 +19,19 @@ const DEFAULTS = {
   sensitivity: 1.0,     // しきい値の感度 (大きいほど検出しやすい)
   minBreathInterval: 1200, // ms: 呼吸イベントの最小間隔(デバウンス)
   idleThreshold: 0.004, // この振幅未満は無音(idle)とみなす
-  rateWindow: 5         // BPM 算出に使う直近の呼吸間隔の数
+  rateWindow: 5,        // BPM 算出に使う直近の呼吸間隔の数
+  deviceId: null        // 使用するマイクの deviceId (null なら既定マイク)
 };
+
+/**
+ * 利用可能なマイク(音声入力デバイス)の一覧を返す。
+ * device.label はマイク許可が一度付与された後でないと空になる点に注意。
+ * @returns {Promise<MediaDeviceInfo[]>}
+ */
+export async function listInputDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter((d) => d.kind === 'audioinput');
+}
 
 /** 中央値を返す。空配列は 0。 */
 function median(arr) {
@@ -82,13 +93,19 @@ export class BreathDetector {
   async start(existingStream) {
     if (this.running) return;
 
+    // 呼吸音が消されないよう音声処理を無効化する。
+    const audioConstraints = {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    };
+    // 特定のマイクが指定されていればそれを使う。
+    if (this.options.deviceId) {
+      audioConstraints.deviceId = { exact: this.options.deviceId };
+    }
+
     this.stream = existingStream || await navigator.mediaDevices.getUserMedia({
-      audio: {
-        // 呼吸音が消されないよう音声処理を無効化する。
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      }
+      audio: audioConstraints
     });
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -133,6 +150,23 @@ export class BreathDetector {
     this.audioContext?.close();
     this.audioContext = null;
     this._emit('stop', { timestamp: performance.now() });
+  }
+
+  /** 利用可能なマイク(音声入力デバイス)の一覧を返す。 */
+  listDevices() {
+    return listInputDevices();
+  }
+
+  /**
+   * 使用するマイクを切り替える。解析中の場合は新しいマイクで再起動する。
+   * @param {string|null} deviceId 使用するマイクの deviceId (null で既定マイク)
+   */
+  async setDevice(deviceId) {
+    this.options.deviceId = deviceId || null;
+    if (this.running) {
+      this.stop();
+      await this.start();
+    }
   }
 
   /** 現在の推定呼吸数 (breaths per minute)。 */
