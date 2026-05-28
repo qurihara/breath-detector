@@ -1,0 +1,31 @@
+{
+  "name": "breath-detector",
+  "version": "0.1.0",
+  "description": "呼吸状態をマイク入力から測定する依存ゼロの JavaScript ライブラリ (Detect breathing state from microphone input in the browser).",
+  "type": "module",
+  "main": "src/breath-detector.js",
+  "module": "src/breath-detector.js",
+  "exports": {
+    ".": "./src/breath-detector.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "demo": "python3 -m http.server 8080"
+  },
+  "keywords": [
+    "breath",
+    "breathing",
+    "respiration",
+    "web-audio",
+    "microphone",
+    "biofeedback"
+  ],
+  "homepage": "https://qurihara.github.io/breath-detector/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qurihara/breath-detector.git"
+  },
+  "license": "MIT"
+}

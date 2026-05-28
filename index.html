@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>breath-detector — 呼吸状態測定デモ</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>breath-detector</h1>
+      <p class="tagline">マイクで呼吸状態を測定する JavaScript ライブラリのデモ</p>
+    </header>
+
+    <section class="visual">
+      <div class="phase-circle" id="phaseCircle">
+        <span id="phaseLabel">idle</span>
+      </div>
+      <canvas id="wave" width="800" height="200" aria-label="呼吸波形"></canvas>
+    </section>
+
+    <section class="stats">
+      <div class="stat">
+        <div class="stat-value" id="bpm">--</div>
+        <div class="stat-label">呼吸数 (回/分)</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="count">0</div>
+        <div class="stat-label">呼吸回数</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="phaseStat">idle</div>
+        <div class="stat-label">フェーズ</div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="toggle" class="btn-primary">測定を開始</button>
+      <label class="slider">
+        感度
+        <input type="range" id="sensitivity" min="0.3" max="3" step="0.1" value="1" />
+        <span id="sensVal">1.0</span>
+      </label>
+    </section>
+
+    <p class="hint" id="hint">「測定を開始」を押してマイクを許可し、ゆっくり深呼吸してみてください。</p>
+    <p class="status" id="status"></p>
+
+    <footer>
+      <a href="https://github.com/qurihara/breath-detector" target="_blank" rel="noopener">GitHub リポジトリ</a>
+    </footer>
+  </main>
+
+  <script type="module" src="demo.js"></script>
+</body>
+</html>
