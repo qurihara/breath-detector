@@ -8,14 +8,18 @@ const els = {
   ack: $('ackBtn'), graph: $('graph'), ratio: $('ratio'), bursts: $('bursts'), bandName: $('bandName'),
   toggle: $('toggle'), mic: $('mic'), apnea: $('apnea'), apneaVal: $('apneaVal'), margin: $('margin'),
   marginVal: $('marginVal'), band: $('band'), sound: $('sound'), wake: $('wake'),
-  recBtn: $('recBtn'), recBeep: $('recBeep'), instruction: $('instruction'), error: $('error')
+  recBtn: $('recBtn'), recBeep: $('recBeep'), instruction: $('instruction'), error: $('error'),
+  mode: $('mode'), shallowRow: $('shallowRow'), shallowRatio: $('shallowRatio'), shallowRatioVal: $('shallowRatioVal'),
+  ratioWin: $('ratioWin'), ratioLabel: $('ratioLabel')
 };
+// 「呼吸音あり」の割合を求める窓の長さ。2026-11-27 の録音で 15・20・30 秒を比べて決めた。
+const RATIO_WINDOW_SEC = 20;
 els.version.textContent = 'v' + VERSION;
 
 // ---- 設定（ブラウザに保存する） ----
 const SETTINGS_KEY = 'breath-monitor-settings';
 const settings = Object.assign(
-  { apneaSec: 10, marginDb: 6, band: 'auto', sound: true, wake: false, deviceId: '' },
+  { apneaSec: 10, marginDb: 6, band: 'auto', sound: true, wake: false, deviceId: '', shallowMode: true, shallowRatio: 40 },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
 );
 function saveSettings() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
@@ -25,14 +29,25 @@ els.band.innerHTML = '<option value="auto">自動（呼吸で音量が最もよ�
 els.apnea.value = settings.apneaSec; els.apneaVal.textContent = settings.apneaSec;
 els.margin.value = settings.marginDb; els.marginVal.textContent = settings.marginDb;
 els.band.value = settings.band; els.sound.checked = settings.sound; els.wake.checked = settings.wake;
+els.mode.value = settings.shallowMode ? 'shallow' : 'apnea';
+els.shallowRatio.value = settings.shallowRatio; els.shallowRatioVal.textContent = settings.shallowRatio;
+els.ratioWin.textContent = RATIO_WINDOW_SEC;
+updateModeUi();
 
 function monitorOptions() {
   return {
     apneaSec: settings.apneaSec,
     warnSec: Math.max(3, Math.round(settings.apneaSec * 0.6)),
     marginDb: settings.marginDb,
-    band: settings.band
+    band: settings.band,
+    shallowMode: settings.shallowMode,
+    shallowRatio: settings.shallowRatio / 100,
+    ratioWindowSec: RATIO_WINDOW_SEC
   };
+}
+
+function updateModeUi() {
+  els.shallowRow.hidden = !settings.shallowMode;
 }
 
 els.apnea.addEventListener('input', () => {
@@ -47,6 +62,16 @@ els.margin.addEventListener('input', () => {
 });
 els.band.addEventListener('change', () => {
   settings.band = els.band.value;
+  if (monitor) Object.assign(monitor.options, monitorOptions());
+  saveSettings();
+});
+els.mode.addEventListener('change', () => {
+  settings.shallowMode = els.mode.value === 'shallow';
+  if (monitor) Object.assign(monitor.options, monitorOptions());
+  updateModeUi(); saveSettings();
+});
+els.shallowRatio.addEventListener('input', () => {
+  settings.shallowRatio = Number(els.shallowRatio.value); els.shallowRatioVal.textContent = settings.shallowRatio;
   if (monitor) Object.assign(monitor.options, monitorOptions());
   saveSettings();
 });
@@ -70,7 +95,7 @@ navigator.mediaDevices?.addEventListener?.('devicechange', listMics);
 // ---- 音声の処理 ----
 let ctx = null, stream = null, node = null, sink = null, monitor = null, running = false;
 let suppressUntil = 0;      // この時刻（AudioContext の時刻）までは判定に使わない
-let nextBeepAt = 0, acked = false, prevStatus = 'warmup';
+let nextBeepAt = 0, acked = false, prevStatus = 'warmup', shallowMuteUntil = 0;
 let wakeLock = null;
 
 async function start() {
@@ -124,11 +149,15 @@ function stop() {
 }
 
 els.toggle.addEventListener('click', () => (running ? stop() : start()));
-els.ack.addEventListener('click', () => { acked = true; els.ack.hidden = true; });
+els.ack.addEventListener('click', () => {
+  if (monitor?.status === 'shallow') shallowMuteUntil = ctx.currentTime + 60;
+  else acked = true;
+  els.ack.hidden = true;
+});
 
-function beep(freq, dur, gain) {
+function beep(freq, dur, gain, delay = 0) {
   if (!ctx) return;
-  const t0 = ctx.currentTime + 0.01;
+  const t0 = ctx.currentTime + 0.01 + delay;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.frequency.value = freq;
@@ -162,6 +191,16 @@ function onFrame(msg) {
     beep(880, 0.25, 0.4);
     nextBeepAt = ctx.currentTime + 0.8;
   }
+  // 浅い呼吸の注意の音は、警報と区別できるよう低く、間隔を空けて鳴らす。
+  if (s.status === 'shallow' && settings.sound && !recording && ctx.currentTime >= shallowMuteUntil && ctx.currentTime >= nextBeepAt) {
+    beep(523, 0.18, 0.2);
+    beep(392, 0.25, 0.2, 0.22);
+    nextBeepAt = ctx.currentTime + 8;
+  }
+  if (s.status !== prevStatus) {
+    if (recording) recStatus.push([Number(recT.toFixed(2)), s.status]);
+    if (s.status === 'shallow' && prevStatus !== 'shallow') nextBeepAt = Math.max(nextBeepAt, ctx.currentTime);
+  }
   prevStatus = s.status;
 
   if (s.t >= nextHistT) {
@@ -176,6 +215,7 @@ const STATUS_TEXT = {
   warmup: '準備中（静かなときの音量を推定しています）',
   ok: '呼吸音を検出しています',
   warn: '呼吸音が途切れています',
+  shallow: '呼吸が浅くなっています',
   alarm: '警報：呼吸音が長く途切れています'
 };
 
@@ -183,11 +223,17 @@ function updatePanel(s) {
   els.panel.className = 'status-panel ' + s.status;
   els.statusText.textContent = STATUS_TEXT[s.status];
   els.silence.textContent = s.silenceSec.toFixed(1);
-  els.ack.hidden = !(s.status === 'alarm' && settings.sound && !acked && !recording);
-  els.ratio.textContent = Math.round(s.activeRatio30 * 100) + '%';
+  const showAck = settings.sound && !recording &&
+    ((s.status === 'alarm' && !acked) || (s.status === 'shallow' && ctx.currentTime >= shallowMuteUntil));
+  els.ack.hidden = !showAck;
+  els.ack.textContent = s.status === 'shallow' ? '注意の音を1分間止める' : '警報の音を止める（次の呼吸音まで）';
+  if (s.status === 'shallow') {
+    els.statusText.textContent = `呼吸が浅くなっています（直近${RATIO_WINDOW_SEC}秒の呼吸音の割合 ${Math.round(s.activeRatio * 100)}%、目安は${settings.shallowRatio}%以上）`;
+  }
+  els.ratio.textContent = Math.round(s.activeRatio * 100) + '%';
   els.bursts.textContent = s.burstCount;
   els.bandName.textContent = s.band.name + (settings.band === 'auto' ? '（自動）' : '');
-  document.title = s.status === 'alarm' ? '【警報】呼吸モニター' : '呼吸モニター';
+  document.title = s.status === 'alarm' ? '【警報】呼吸モニター' : s.status === 'shallow' ? '【注意】呼吸モニター' : '呼吸モニター';
 }
 
 // ---- グラフ ----
@@ -203,7 +249,8 @@ function draw() {
   g2.clearRect(0, 0, w, h);
   if (history.length < 2) return;
   const tEnd = history[history.length - 1].t;
-  const vals = history.flatMap((p) => [p.level, p.floor, p.th]).filter((v) => Number.isFinite(v));
+  const vals = history.flatMap((p) => [p.level, p.floor, p.th]).filter((v) => Number.isFinite(v) && v > -100);
+  if (vals.length === 0) return;
   const lo = Math.min(...vals) - 3, hi = Math.max(...vals) + 3;
   const X = (t) => w - ((tEnd - t) / 60) * w;
   const Y = (v) => h - ((v - lo) / (hi - lo)) * (h - 8) - 4;
@@ -218,7 +265,7 @@ function draw() {
     g2.strokeStyle = color; g2.lineWidth = width; g2.beginPath();
     let first = true;
     for (const p of history) {
-      if (!Number.isFinite(p[key])) continue;
+      if (!Number.isFinite(p[key]) || p[key] <= -100) { first = true; continue; }
       first ? g2.moveTo(X(p.t), Y(p[key])) : g2.lineTo(X(p.t), Y(p[key]));
       first = false;
     }
@@ -248,25 +295,26 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) upda
 
 // ---- 検証用の録音 ----
 // 指示の順番。息止めの区間が正解になる。
+// v0.2.0 で、普通の呼吸から浅い呼吸へ直接移る区間と、浅い呼吸から普通の呼吸へ戻る区間を入れた。
 const PROTOCOL = [
   { kind: 'breathe', dur: 30, text: '普通に呼吸してください' },
   { kind: 'hold', dur: 15, text: '息を止めてください' },
   { kind: 'breathe', dur: 30, text: '普通に呼吸してください' },
+  { kind: 'shallow', dur: 40, text: 'できるだけ浅く、静かに呼吸してください' },
+  { kind: 'breathe', dur: 25, text: '普通に呼吸してください' },
   { kind: 'hold', dur: 20, text: '息を止めてください' },
-  { kind: 'shallow', dur: 30, text: 'できるだけ浅く、静かに呼吸してください' },
-  { kind: 'hold', dur: 15, text: '息を止めてください' },
   { kind: 'breathe', dur: 20, text: '普通に呼吸してください' }
 ];
 const PROTOCOL_TOTAL = PROTOCOL.reduce((a, s) => a + s.dur, 0);
 let recording = false, recChunks = [], recSamples = 0, recSr = 48000, recT = 0, recStep = -1;
-let recAlarms = [], recBeeps = [], recStartedAt = null;
+let recAlarms = [], recBeeps = [], recStatus = [], recStartedAt = null;
 
 els.recBtn.addEventListener('click', async () => {
   if (recording) { finishRecording(true); return; }
   if (!running) await start();
   if (!running) return;
   recording = true; recChunks = []; recSamples = 0; recSr = ctx.sampleRate; recT = 0; recStep = -1;
-  recAlarms = []; recBeeps = []; recStartedAt = new Date();
+  recAlarms = []; recBeeps = []; recStatus = []; recStartedAt = new Date();
   node.port.postMessage({ recording: true });
   els.recBtn.textContent = '録音を中止する';
   els.instruction.hidden = false;
@@ -304,7 +352,7 @@ function finishRecording(aborted) {
     device: stream?.getAudioTracks()[0]?.label || '', userAgent: navigator.userAgent,
     settings: { ...DEFAULT_OPTIONS, ...monitorOptions() },
     steps, holds: steps.filter((s) => s.kind === 'hold').map((s) => [s.start, s.end]),
-    beeps: recBeeps, onlineAlarms: recAlarms
+    beeps: recBeeps, onlineAlarms: recAlarms, onlineStatus: recStatus
   };
   download(new Blob([JSON.stringify(label, null, 2)], { type: 'application/json' }), name + '.json');
   els.instruction.hidden = false;

@@ -25,24 +25,29 @@
     <p class="legend"><span class="sw level"></span>音量　<span class="sw th"></span>呼吸音と判定する閾値　<span class="sw floor"></span>静かなときの音量（推定）　<span class="sw on"></span>呼吸音ありと判定した区間</p>
 
     <section class="stats">
-      <div><div class="v" id="ratio">--</div><div class="k">直近30秒のうち呼吸音のあった割合</div></div>
+      <div><div class="v" id="ratio">--</div><div class="k">直近<span id="ratioWin">20</span>秒のうち呼吸音のあった割合</div></div>
       <div><div class="v" id="bursts">0</div><div class="k">呼吸音の区間の数</div></div>
       <div><div class="v small" id="bandName">--</div><div class="k">判定に使っている周波数帯</div></div>
     </section>
 
     <section class="controls">
       <button id="toggle" class="primary">監視を開始</button>
+      <label>知らせる内容 <select id="mode">
+        <option value="shallow">息止めと浅い呼吸の両方を知らせる</option>
+        <option value="apnea">息止めだけを知らせる</option>
+      </select></label>
+      <label id="shallowRow">浅い呼吸とする割合（直近20秒のうち呼吸音のあった割合がこれを下回ったら注意） <input type="range" id="shallowRatio" min="10" max="80" step="5" value="40" /> <output id="shallowRatioVal">40</output>%</label>
       <label>マイク <select id="mic"></select></label>
       <label>警報を出すまでの秒数 <input type="range" id="apnea" min="5" max="30" step="1" value="10" /> <output id="apneaVal">10</output>秒</label>
       <label>閾値（静かなときより何 dB 大きければ呼吸音とするか） <input type="range" id="margin" min="2" max="15" step="0.5" value="6" /> <output id="marginVal">6</output> dB</label>
       <label>周波数帯 <select id="band"></select></label>
-      <label class="check"><input type="checkbox" id="sound" checked /> 警報の音を鳴らす</label>
+      <label class="check"><input type="checkbox" id="sound" checked /> 警報と注意の音を鳴らす</label>
       <label class="check"><input type="checkbox" id="wake" /> 画面を消さない</label>
     </section>
 
     <section class="record">
       <h2>検証用の録音</h2>
-      <p>判定の精度を確かめるための録音です。画面の指示に従って、普通の呼吸、息止め、浅い呼吸を約3分間行います。終わると、音声（WAV）と、指示の時刻を書いた正解の記録（JSON）を保存します。録音中は警報の音を鳴らしません。</p>
+      <p>判定の精度を確かめるための録音です。画面の指示に従って、普通の呼吸、息止め、浅い呼吸を3分間行います。終わると、音声（WAV）と、指示の時刻を書いた正解の記録（JSON）を保存します。録音中は警報の音を鳴らしません。</p>
       <button id="recBtn">検証用の録音を始める</button>
       <label class="check"><input type="checkbox" id="recBeep" checked /> 指示が変わるときに短い音を鳴らす</label>
       <div class="instruction" id="instruction" hidden></div>

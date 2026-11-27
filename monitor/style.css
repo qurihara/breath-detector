@@ -1,6 +1,6 @@
 :root {
   --bg: #f6f7f9; --fg: #1d2330; --muted: #5c6577; --card: #ffffff; --line: #d9dde5;
-  --ok: #1f9d55; --warn: #c98a00; --alarm: #d32f2f; --idle: #8a93a5; --accent: #2b6cb0;
+  --ok: #1f9d55; --warn: #c98a00; --shallow: #6b5bd2; --alarm: #d32f2f; --idle: #8a93a5; --accent: #2b6cb0;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #12151b; --fg: #e8ebf1; --muted: #9aa3b5; --card: #1b2029; --line: #2d3442; --idle: #6b7487; }
@@ -17,9 +17,11 @@ h2 { font-size: 1.1rem; margin: 0 0 6px; }
 .status-panel { border-radius: 14px; padding: 18px; text-align: center; color: #fff; background: var(--idle); transition: background 0.2s; }
 .status-panel.ok { background: var(--ok); }
 .status-panel.warn { background: var(--warn); }
+.status-panel.shallow { background: var(--shallow); }
 .status-panel.alarm { background: var(--alarm); animation: blink 0.8s infinite; }
 @keyframes blink { 50% { filter: brightness(1.25); } }
 .status-text { font-size: 1.25rem; font-weight: 600; }
+[hidden] { display: none !important; }
 .silence { font-size: 4.5rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .silence .unit { font-size: 1.5rem; margin-left: 4px; }
 .silence-label { font-size: 0.9rem; opacity: 0.9; }

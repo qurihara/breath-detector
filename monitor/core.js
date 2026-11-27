@@ -6,6 +6,8 @@
 //   静かなときの音量（ノイズフロア）を直近の音量の下位の百分位数で推定し、
 //   それより marginDb 以上大きい状態を「呼吸音あり」とする。
 //   「呼吸音あり」が途切れてからの時間が apneaSec を超えたら警報を出す。
+//   shallowMode では、直近 ratioWindowSec 秒のうち「呼吸音あり」だった割合が
+//   shallowRatio を下回ったときも「呼吸が浅い」として知らせる。
 
 import { BANDS } from './features.js';
 
@@ -21,10 +23,14 @@ export const DEFAULT_OPTIONS = {
   warmupSec: 8,        // 開始から判定を始めるまでの秒数
   band: 'auto',        // 'auto' または BANDS の id
   autoWindowSec: 30,   // 帯域を自動で選ぶときに見る窓の長さ
-  autoHysteresisDb: 3  // 帯域を切り替えるのに必要な差
+  autoHysteresisDb: 3, // 帯域を切り替えるのに必要な差
+  shallowMode: false,  // true にすると、浅い呼吸も「呼吸不足」として知らせる
+  ratioWindowSec: 30,  // 「呼吸音あり」の割合を求める窓の長さ
+  shallowRatio: 0.4    // 割合がこれを下回ったら「呼吸が浅い」とする
 };
 
 const HIST_STEP = 0.1; // 履歴を保存する間隔（秒）
+const DIGITAL_SILENCE_DB = -100; // これより小さい音量は、マイクの入力が完全な無音のときにしか出ない
 
 function percentile(sorted, p) {
   if (sorted.length === 0) return 0;
@@ -53,7 +59,9 @@ export class BreathMonitor {
     this.breathing = false;    // minActiveSec 以上続いた「呼吸音あり」
     this.lastBreathT = null;   // 最後に「呼吸音あり」だった時刻
     this.burstCount = 0;       // 「呼吸音あり」の区間の数
-    this.activeLog = [];       // 直近 30 秒の「呼吸音あり」の割合を出すための記録
+    this.activeLog = [];       // 直近 ratioWindowSec 秒の「呼吸音あり」の割合を出すための記録
+    this._activeSum = 0;
+    this._logDur = 0;
     this.status = 'warmup';
   }
 
@@ -69,6 +77,10 @@ export class BreathMonitor {
   push(bandDb, dt, suppress = false) {
     const o = this.options;
     this.t += dt;
+    // マイクが動き出す前などの完全な無音（数値がすべて 0）は、静かなときの音量の推定を狂わせるので使わない。
+    let maxDb = -Infinity;
+    for (let j = 0; j < bandDb.length; j++) maxDb = Math.max(maxDb, bandDb[j]);
+    if (maxDb < DIGITAL_SILENCE_DB) suppress = true;
     if (suppress) {
       this.active = false;
       this.activeSince = null;
@@ -121,9 +133,9 @@ export class BreathMonitor {
 
     const on = this.breathing ? dt : 0;
     this.activeLog.push([dt, on]);
-    this._activeSum = (this._activeSum || 0) + on;
-    this._logDur = (this._logDur || 0) + dt;
-    while (this._logDur > 30 && this.activeLog.length > 1) {
+    this._activeSum += on;
+    this._logDur += dt;
+    while (this._logDur > o.ratioWindowSec && this.activeLog.length > 1) {
       const [d, x] = this.activeLog.shift();
       this._activeSum -= x;
       this._logDur -= d;
@@ -139,12 +151,23 @@ export class BreathMonitor {
     if (this.t < o.warmupSec || Number.isNaN(this.floor[this.bandIndex])) this.status = 'warmup';
     else if (silence >= o.apneaSec) this.status = 'alarm';
     else if (silence >= o.warnSec) this.status = 'warn';
+    else if (this.isShallow) this.status = 'shallow';
     else this.status = 'ok';
   }
 
   // 呼吸音が途切れてからの秒数。開始直後は開始からの秒数を使う。
   get silenceSec() {
     return this.lastBreathT === null ? this.t : this.t - this.lastBreathT;
+  }
+
+  get activeRatio() {
+    return this._logDur ? this._activeSum / this._logDur : 0;
+  }
+
+  // 浅い呼吸の判定。窓が埋まるまで（開始から ratioWindowSec 秒）は判定しない。
+  get isShallow() {
+    const o = this.options;
+    return o.shallowMode && this._logDur >= o.ratioWindowSec * 0.95 && this.activeRatio < o.shallowRatio;
   }
 
   _updateStats() {
@@ -186,7 +209,7 @@ export class BreathMonitor {
       depth: this.depth[j],
       band: BANDS[j],
       burstCount: this.burstCount,
-      activeRatio30: this._logDur ? this._activeSum / this._logDur : 0
+      activeRatio: this.activeRatio
     };
   }
 }
