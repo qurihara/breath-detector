@@ -1,6 +1,6 @@
 // AudioWorklet の処理。音声のスレッドで動くので、タブが裏に回っても止まらない。
 // 1024 サンプルごとに周波数帯ごとの音量を求めて送る。録音中は生の音声も送る。
-import { createBandAnalyzer, FRAME_SIZE } from './features.js?v=0.2.1';
+import { createBandAnalyzer, FRAME_SIZE } from './features.js?v=0.3.0';
 
 class BandLevelProcessor extends AudioWorkletProcessor {
   constructor() {

@@ -6,10 +6,13 @@
 //   静かなときの音量（ノイズフロア）を直近の音量の下位の百分位数で推定し、
 //   それより marginDb 以上大きい状態を「呼吸音あり」とする。
 //   「呼吸音あり」が途切れてからの時間が apneaSec を超えたら警報を出す。
-//   shallowMode では、直近 ratioWindowSec 秒のうち「呼吸音あり」だった割合が
-//   shallowRatio を下回ったときも「呼吸が浅い」として知らせる。
+//   shallowMode では、浅い呼吸も「呼吸が浅い」として知らせる。判定の方法は2つある。
+//     shallowMethod = 'ratio'  : 直近 ratioWindowSec 秒のうち「呼吸音あり」だった割合が shallowRatio を下回ったとき
+//     shallowMethod = 'target' : 呼吸音の強さ（直近 strengthWindowSec 秒の音量の上位10%の値が、静かなときの音量より
+//                               何 dB 大きいか）が、登録した目標の強さより targetDropDb 以上小さくなったとき。
+//                               目標を登録していないときは、強さが fixedStrengthDb を下回ったとき。
 
-import { BANDS } from './features.js?v=0.2.1';
+import { BANDS } from './features.js?v=0.3.0';
 
 export const DEFAULT_OPTIONS = {
   apneaSec: 10,        // 呼吸音が途切れてから警報を出すまでの秒数
@@ -26,7 +29,15 @@ export const DEFAULT_OPTIONS = {
   autoHysteresisDb: 3, // 帯域を切り替えるのに必要な差
   shallowMode: false,  // true にすると、浅い呼吸も「呼吸不足」として知らせる
   ratioWindowSec: 30,  // 「呼吸音あり」の割合を求める窓の長さ
-  shallowRatio: 0.4    // 割合がこれを下回ったら「呼吸が浅い」とする
+  shallowRatio: 0.6,   // 割合がこれを下回ったら「呼吸が浅い」とする（2026-11-27 に栗原さんが試して 60% に決めた）
+  shallowMethod: 'target', // 'ratio' または 'target'
+  // 呼吸音の強さの設定は、2026-11-27 の2回の録音で比べて決めた（eval/target_sweep.mjs）。
+  strengthBand: 'b3',  // 呼吸音の強さを求める周波数帯（1〜3 kHz）。'judge' は判定に使っている周波数帯
+  strengthWindowSec: 10, // 呼吸音の強さを求める窓の長さ
+  strengthPercentile: 0.9, // 呼吸音の強さに使う百分位数
+  targetStrength: null, // 登録した目標の強さ（周波数帯ごとの dB の配列）。null は未登録
+  targetDropDb: 10,    // 目標の強さよりこれだけ小さくなったら「呼吸が浅い」とする
+  fixedStrengthDb: 9   // 目標を登録していないときの、強さの閾値
 };
 
 const HIST_STEP = 0.1; // 履歴を保存する間隔（秒）
@@ -52,6 +63,7 @@ export class BreathMonitor {
     this.nextHistT = 0;
     this.floor = new Float64Array(nb).fill(NaN);
     this.depth = new Float64Array(nb).fill(0);
+    this.strength = new Float64Array(nb).fill(NaN); // 周波数帯ごとの呼吸音の強さ (dB)
     this.nextStatT = 0;
     this.bandIndex = BANDS.findIndex((b) => b.id === 'all');
     this.active = false;       // 閾値を超えている（平滑化後の音量で判定）
@@ -80,8 +92,11 @@ export class BreathMonitor {
     // マイクが動き出す前などの完全な無音（数値がすべて 0）は、静かなときの音量の推定を狂わせるので使わない。
     let maxDb = -Infinity;
     for (let j = 0; j < bandDb.length; j++) maxDb = Math.max(maxDb, bandDb[j]);
-    if (maxDb < DIGITAL_SILENCE_DB) suppress = true;
-    if (suppress) {
+    const digitalSilence = maxDb < DIGITAL_SILENCE_DB;
+    if (suppress || digitalSilence) {
+      // 通知の音を鳴らしている時間は、呼吸音が途切れた時間にも数えない（音が鳴るたびに警報が早まらないように）。
+      // 完全な無音はマイクが働いていない状態なので、途切れた時間に数え、警報を出す。
+      if (suppress && !digitalSilence && this.lastBreathT !== null) this.lastBreathT += dt;
       this.active = false;
       this.activeSince = null;
       this.breathing = false;
@@ -164,10 +179,46 @@ export class BreathMonitor {
     return this._logDur ? this._activeSum / this._logDur : 0;
   }
 
+  get strengthBandIndex() {
+    const id = this.options.strengthBand;
+    if (!id || id === 'judge') return this.bandIndex;
+    const k = BANDS.findIndex((b) => b.id === id);
+    return k >= 0 ? k : this.bandIndex;
+  }
+
+  // いま使っている周波数帯での呼吸音の強さと、浅い呼吸とする閾値
+  get strengthInfo() {
+    const o = this.options;
+    const k = this.strengthBandIndex;
+    const target = o.targetStrength ? o.targetStrength[k] : null;
+    const threshold = Number.isFinite(target) ? target - o.targetDropDb : o.fixedStrengthDb;
+    return { value: this.strength[k], target: Number.isFinite(target) ? target : null, threshold, band: BANDS[k] };
+  }
+
   // 浅い呼吸の判定。窓が埋まるまで（開始から ratioWindowSec 秒）は判定しない。
   get isShallow() {
     const o = this.options;
-    return o.shallowMode && this._logDur >= o.ratioWindowSec * 0.95 && this.activeRatio < o.shallowRatio;
+    if (!o.shallowMode || this._logDur < o.ratioWindowSec * 0.95) return false;
+    if (o.shallowMethod === 'target') {
+      const s = this.strengthInfo;
+      return Number.isFinite(s.value) && s.value < s.threshold;
+    }
+    return this.activeRatio < o.shallowRatio;
+  }
+
+  /**
+   * 直近 sec 秒の音量から、周波数帯ごとの呼吸音の強さを求めて、目標として登録する。
+   * 返り値は周波数帯ごとの強さの配列（options.targetStrength にも入れる）。保存はアプリが行う。
+   */
+  captureTarget(sec = 20) {
+    const n = Math.round(sec / HIST_STEP);
+    const out = this.hist.map((h, j) => {
+      if (h.length < n * 0.8 || Number.isNaN(this.floor[j])) return null;
+      const x = h.slice(-n).sort((a, b) => a - b);
+      return Number((percentile(x, this.options.strengthPercentile) - this.floor[j]).toFixed(1));
+    });
+    this.options.targetStrength = out;
+    return out;
   }
 
   _updateStats() {
@@ -181,6 +232,8 @@ export class BreathMonitor {
       this.floor[j] = percentile(fl, o.floorPercentile);
       const au = h.slice(-nAuto).sort((x, y) => x - y);
       this.depth[j] = percentile(au, 0.9) - percentile(au, 0.1);
+      const st = h.slice(-Math.round(o.strengthWindowSec / HIST_STEP)).sort((x, y) => x - y);
+      this.strength[j] = percentile(st, o.strengthPercentile) - this.floor[j];
     }
     if (o.band === 'auto') {
       let best = this.bandIndex;
@@ -209,7 +262,8 @@ export class BreathMonitor {
       depth: this.depth[j],
       band: BANDS[j],
       burstCount: this.burstCount,
-      activeRatio: this.activeRatio
+      activeRatio: this.activeRatio,
+      strength: this.strengthInfo
     };
   }
 }
