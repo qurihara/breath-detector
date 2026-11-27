@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>呼吸モニター</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>呼吸モニター <span class="version" id="version"></span></h1>
+      <p class="lead">マイク付きヘッドセットのマイクを鼻の穴の直下に置いて使います。呼吸の気流の雑音が途切れた時間を測り、設定した秒数を超えたら警報を鳴らします。</p>
+      <p class="caution">試作です。医療機器ではありません。命に関わる用途には使わないでください。</p>
+    </header>
+
+    <section class="status-panel warmup" id="statusPanel" aria-live="polite">
+      <div class="status-text" id="statusText">「監視を開始」を押してください</div>
+      <div class="silence"><span id="silence">--</span><span class="unit">秒</span></div>
+      <div class="silence-label">呼吸音が途切れている時間</div>
+      <button id="ackBtn" class="ack" hidden>警報の音を止める（次の呼吸音まで）</button>
+    </section>
+
+    <canvas id="graph" aria-label="音量の推移"></canvas>
+    <p class="legend"><span class="sw level"></span>音量　<span class="sw th"></span>呼吸音と判定する閾値　<span class="sw floor"></span>静かなときの音量（推定）　<span class="sw on"></span>呼吸音ありと判定した区間</p>
+
+    <section class="stats">
+      <div><div class="v" id="ratio">--</div><div class="k">直近30秒のうち呼吸音のあった割合</div></div>
+      <div><div class="v" id="bursts">0</div><div class="k">呼吸音の区間の数</div></div>
+      <div><div class="v small" id="bandName">--</div><div class="k">判定に使っている周波数帯</div></div>
+    </section>
+
+    <section class="controls">
+      <button id="toggle" class="primary">監視を開始</button>
+      <label>マイク <select id="mic"></select></label>
+      <label>警報を出すまでの秒数 <input type="range" id="apnea" min="5" max="30" step="1" value="10" /> <output id="apneaVal">10</output>秒</label>
+      <label>閾値（静かなときより何 dB 大きければ呼吸音とするか） <input type="range" id="margin" min="2" max="15" step="0.5" value="6" /> <output id="marginVal">6</output> dB</label>
+      <label>周波数帯 <select id="band"></select></label>
+      <label class="check"><input type="checkbox" id="sound" checked /> 警報の音を鳴らす</label>
+      <label class="check"><input type="checkbox" id="wake" /> 画面を消さない</label>
+    </section>
+
+    <section class="record">
+      <h2>検証用の録音</h2>
+      <p>判定の精度を確かめるための録音です。画面の指示に従って、普通の呼吸、息止め、浅い呼吸を約3分間行います。終わると、音声（WAV）と、指示の時刻を書いた正解の記録（JSON）を保存します。録音中は警報の音を鳴らしません。</p>
+      <button id="recBtn">検証用の録音を始める</button>
+      <label class="check"><input type="checkbox" id="recBeep" checked /> 指示が変わるときに短い音を鳴らす</label>
+      <div class="instruction" id="instruction" hidden></div>
+    </section>
+
+    <p class="error" id="error"></p>
+    <footer>
+      <a href="https://github.com/qurihara/breath-detector">GitHub リポジトリ</a> ・ <a href="../">旧版のデモ（breath-detector）</a>
+    </footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
