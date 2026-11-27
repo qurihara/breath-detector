@@ -1,6 +1,6 @@
-import { BANDS } from './features.js';
-import { BreathMonitor, DEFAULT_OPTIONS } from './core.js';
-import { VERSION } from './version.js';
+import { BANDS } from './features.js?v=0.2.1';
+import { BreathMonitor, DEFAULT_OPTIONS } from './core.js?v=0.2.1';
+import { VERSION } from './version.js?v=0.2.1';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -109,7 +109,7 @@ async function start() {
     return;
   }
   ctx = new AudioContext();
-  await ctx.audioWorklet.addModule(new URL('./worklet.js', import.meta.url));
+  await ctx.audioWorklet.addModule(new URL('./worklet.js?v=0.2.1', import.meta.url));
   const src = ctx.createMediaStreamSource(stream);
   node = new AudioWorkletNode(ctx, 'band-level', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
   sink = ctx.createGain(); sink.gain.value = 0;

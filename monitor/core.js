@@ -9,7 +9,7 @@
 //   shallowMode では、直近 ratioWindowSec 秒のうち「呼吸音あり」だった割合が
 //   shallowRatio を下回ったときも「呼吸が浅い」として知らせる。
 
-import { BANDS } from './features.js';
+import { BANDS } from './features.js?v=0.2.1';
 
 export const DEFAULT_OPTIONS = {
   apneaSec: 10,        // 呼吸音が途切れてから警報を出すまでの秒数

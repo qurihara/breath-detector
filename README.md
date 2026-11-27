@@ -32,6 +32,9 @@ node eval/analyze_rec.mjs eval/data/xxx.wav  # 録音を区間ごと、周波数
 node eval/shallow_sweep.mjs eval/data/xxx.wav # 浅い呼吸の判定の設定を比べる
 ```
 
+呼吸モニターのバージョンは monitor/version.js で管理します。バージョンを変えたら、ブラウザが古いファイルを使い続けないよう、
+`node tools/stamp_version.mjs` を実行して、ファイルを読み込む箇所に「?v=バージョン」を書き込みます。
+
 合成音は判定の論理を確かめるためのものです。実際の精度は、検証用の録音で確かめます。
 録音は個人の呼吸音なので、eval/data/ に置き、リポジトリには入れません。
 変更の履歴は CHANGELOG.md にあります。
